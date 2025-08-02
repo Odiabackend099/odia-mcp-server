@@ -31,37 +31,80 @@ export default async function handler(req, res) {
       version: '1.0.0'
     };
 
-    // 🏗️ Check if we can connect to database
+    // 🏗️ Enhanced database connectivity check
     try {
+      // Try to query the health_checks table
       const { data, error } = await supabaseService
         .from('health_checks')
-        .select('count')
+        .select('id')
         .limit(1);
       
-      health.database = error ? '❌ Connection Failed' : '✅ Connected';
+      if (error) {
+        // If health_checks table doesn't exist, try to create it and test basic connectivity
+        try {
+          const { data: createData, error: createError } = await supabaseService
+            .from('health_checks')
+            .insert({ status: 'auto_created', timestamp: new Date().toISOString() })
+            .select();
+          
+          if (createError) {
+            // Fall back to basic connectivity test
+            const { data: basicTest, error: basicError } = await supabaseService
+              .rpc('version');
+            
+            health.database = basicError ? '❌ Connection Failed' : '⚠️ Tables Missing';
+          } else {
+            health.database = '✅ Connected & Ready';
+          }
+        } catch (fallbackError) {
+          health.database = '⚠️ Partial Connection';
+        }
+      } else {
+        health.database = '✅ Connected';
+      }
     } catch (dbError) {
-      health.database = '⚠️ Check Failed';
+      health.database = '❌ Connection Failed';
       logger.warn('Database health check failed', { error: dbError.message });
     }
 
     // 📊 System metrics
     health.metrics = {
       responseTime: `${Date.now() - startTime}ms`,
-      memory: process.memoryUsage(),
+      memory: {
+        used: `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
+        heap: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`
+      },
       uptime: `${Math.floor(process.uptime())}s`
     };
 
-    // 🔧 Service status
+    // 🔧 Service status with proper environment variable checks
     health.services = {
       claude: config.CLAUDE_API_KEY ? '✅ Configured' : '❌ Missing API Key',
       elevenlabs: config.ELEVENLABS_API_KEY ? '✅ Configured' : '⚠️ TTS Disabled',
-      supabase: config.SUPABASE_URL ? '✅ Configured' : '❌ Missing Config',
+      supabase: (config.SUPABASE_URL && config.SUPABASE_SERVICE_ROLE_KEY) ? '✅ Configured' : '❌ Missing Config',
       flutterwave: config.FLUTTERWAVE_SECRET_KEY ? '✅ Configured' : '⚠️ Payments Disabled'
     };
 
+    // 🎯 Overall system health calculation
+    const criticalServices = ['claude', 'supabase'];
+    const criticalServicesHealthy = criticalServices.every(service => 
+      health.services[service].includes('✅')
+    );
+    
+    const dbHealthy = health.database.includes('✅') || health.database.includes('⚠️');
+    
+    if (criticalServicesHealthy && dbHealthy) {
+      health.overall = '🟢 All Systems Operational';
+    } else if (criticalServicesHealthy) {
+      health.overall = '🟡 Minor Issues - Core Functions Working';
+    } else {
+      health.overall = '🔴 Critical Issues Detected';
+    }
+
     logger.info('Health check completed', {
       responseTime: health.metrics.responseTime,
-      database: health.database
+      database: health.database,
+      overall: health.overall
     });
 
     res.statusCode = 200;
@@ -76,7 +119,8 @@ export default async function handler(req, res) {
     res.end(JSON.stringify({
       status: '❌ Server Error',
       error: 'Health check failed',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      overall: '🔴 System Error'
     }));
   }
 }
