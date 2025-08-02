@@ -5,10 +5,33 @@
   "type": "module",
   "scripts": {
     "build": "echo 'Nothing to build'",
-    "start": "node api/healthcheck.js"
+    "start": "node api/healthcheck.js",
+    "test": "jest --detectOpenHandles",
+    "test:coverage": "jest --coverage --detectOpenHandles",
+    "dev": "echo 'Use: vercel dev'",
+    "deploy": "vercel --prod"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.3",
-    "axios": "^1.6.7"
+    "axios": "^1.6.7",
+    "joi": "^17.11.0",
+    "winston": "^3.11.0",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "express-validator": "^7.0.1",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "@types/jest": "^29.5.8"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {},
+    "extensionsToTreatAsEsm": [".js"],
+    "globals": {
+      "NODE_OPTIONS": "--experimental-vm-modules"
+    }
   }
 }
